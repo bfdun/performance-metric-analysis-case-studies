@@ -1,0 +1,483 @@
+---
+title: "Measurement & Eval Final Project"
+author: "Brenna Dunston"
+date: "2024-12-05"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(tidyverse)
+library(rmarkdown)
+library(knitr)
+library(here)
+library(janitor)
+library(DT) 
+library(readxl)
+library(psych)
+library(effectsize)
+library(ggpubr)
+```
+## Introduction 
+
+Recently, the interest in adult recreational sport, like pickleball, has been growing. With ankle sprains being one of the most common injuries in physically active populations and . postural stability being a risk factor for injury (McCriskin et al., 2015; Herzog et al., 2019), we wanted to test postural stability through the use of the single leg balance test. Single leg balance test results have been found to have predictive validity in regards to injury incidence (Trojian & McKeag, 2006). We collected single leg balance data on 12 adult participants. 
+
+### Participants 
+
+Inclusion criteria for participants included...
+* not currently participating in recreational sport
+* interested in returning to recreational sport
+* non currently or recently injured (1 year)
+
+There were 5 male and 7 female participants, with ages ranging from 21-61 years. 
+
+### Testing Procedures
+
+Procedures were adapted from Trojian & McKeag (2006) and Linens et al. (2014). The test was conducted with...
+
+* on one foot without shoes on
+* the contralateral knee bent and not touching the weight bearing leg
+* the hips were level to the ground
+* the eyes open and fixed on a spot marked on the wall and then the eyes were closed and timer was started
+
+Criteria for stopping the test...
+* the athlete’s legs touched each other
+* the feet moved on the floor
+* the foot touches down 
+* or the arms moved from starting position
+* participant reported sense of imbalance
+* 60 seconds had passed
+
+Time at stopping was recorded. An SLB test was considered positive if the athlete was unable to carry out the test on either or both legs for the criterion of 10 seconds. Additionally, the balance times were assessed using criteria presented in Linens et al. (2014) to assess for chronic ankle instability (CAI). 
+
+```{r}
+df_1 <- read_xlsx(here("data", "slst_balance_data.xlsx"))
+```
+
+```{r}
+test_retest <- df_1 |> 
+  select(right_trial1, right_trial2, left_trial1, left_trial2)
+
+left_icc <- test_retest |> 
+  select(left_trial1, left_trial2) |> 
+  rename(trial1 = left_trial1, trial2 = left_trial2)
+
+right_icc <- test_retest |> 
+  select(right_trial1, right_trial2) |> 
+   rename(trial1 = right_trial1, trial2 = right_trial2)
+
+both_legs <- left_icc |> 
+  bind_rows(right_icc)
+
+```
+
+First step is assessing the normality of the data we collected. We will begin by visually inspecting the data...
+```{r}
+long_data <- df_1 %>%
+  pivot_longer(
+    cols = starts_with("right") | starts_with("left"),
+    names_to = c("side", "trial"),
+    names_sep = "_",
+    values_to = "score"
+  )
+long_data |>
+  filter(trial == "trial1") |> 
+  ggplot(aes(x = score)) +
+  geom_histogram(alpha = 0.3, color = "black", fill = "blue", binwidth = 1) +
+  geom_density(alpha = 0.5) +
+  labs(title = "Balance Score Distribution", x = "Time (sec)") +
+  theme_classic()
+```
+
+Next, we will perform a Shaprio-wilk test on the data to find the normality of each trial on each leg. Remember, we are looking for a W value close to 1.00 and a p-value larger than 0.05.
+
+```{r}
+qq_trial1 <- ggqqplot(both_legs$trial1, 
+         title = "QQ Plot for Trial One",
+         ggtheme = theme_minimal())
+qq_trial2 <- ggqqplot(both_legs$trial2, 
+         title = "QQ Plot for Trial Two",
+         ggtheme = theme_minimal())
+qq_combined <- cowplot::plot_grid(qq_trial1, qq_trial2) 
+qq_combined
+```
+
+
+```{r}
+shapiro_test_results <- data.frame(
+  trial = c("right_trial1", "left_trial1", "right_trial2", "left_trial2"),
+  w_value = c(
+    shapiro.test(df_1$right_trial1)$statistic,
+    shapiro.test(df_1$left_trial1)$statistic,
+    shapiro.test(df_1$right_trial2)$statistic,
+    shapiro.test(df_1$left_trial2)$statistic
+  ),
+  p_value = c(
+    shapiro.test(df_1$right_trial1)$p.value,
+    shapiro.test(df_1$left_trial1)$p.value,
+    shapiro.test(df_1$right_trial2)$p.value,
+    shapiro.test(df_1$left_trial2)$p.value
+  )
+)
+datatable(shapiro_test_results) |> 
+  formatStyle(
+    'p_value',
+    target = 'row',
+    backgroundColor = styleInterval(c(0.05), c("lightcoral", "lightgreen"))
+  )
+```
+Now that we have assessed the normality of the data, we can move on to determining the reliability of the data. Initially, we chose only two trials because of time constraints, but upon further reconsideration I think having a third trial would give a clearer picture of balance ability. I might change the first trial to be a practice trial, even though participants were given a practice period. 
+
+
+
+
+```{r}
+pairs.panels(both_legs)
+
+```
+```{r}
+both_legs |> #Fix the dashed line? 
+  ggplot(aes(x = trial1, y = trial2)) +
+  geom_point() +
+  geom_abline(intercept = 0, slope = 1, color = "red", linetype = "dashed", linewidth = 1.2, alpha = 0.8) +
+  geom_smooth(method = 'lm', alpha = 0.3) +
+  labs(title = "Test Retest Reliability (Both Legs)", x = "Trial 1 (sec)", y = "Trial 2 (sec)") +
+  theme_classic()
+```
+
+
+```{r}
+icc_result <- ICC(both_legs)
+icc_value <- icc_result$results$ICC[2]
+ci <- icc_result$results[, c("ICC", "lower bound", "upper bound")]
+cat(paste('The ICC between trial one and trial two for both legs was found to be', round(icc_value, 3),', which is considered to be moderate reliability. Additionally, the confidence interval is (0.28-0.80).')) 
+```
+```{r}
+sem <- (sd(c(both_legs$trial1, both_legs$trial2))) * sqrt(1 - icc_value)
+cat(paste('The SEM for both legs is', round(sem, 2), "when calculated from the ICC result."))
+```
+
+This SEM indicates that the observed score may vary 3.98 seconds from the participants true score due to measurement error. If we consider this in relation to the mean…
+
+```{r}
+mean_1 <- mean(both_legs$trial1)
+mean_2 <- mean(both_legs$trial2)
+sem_percent <- ((sem / ((mean_1 + mean_2) / 2)) * 100)
+cat(paste('The SEM is', round(sem_percent, 2), '% of the mean score.'))
+```
+
+Now that we have the SEM, let's find the Minimal Detectable Change (MDC) so individuals can assess changes in their scores.
+
+```{r}
+MDC <- sem * sqrt(2) * 1.96
+cat("the MDC is", round(MDC,2),"(secs)")
+```
+This would indicate that an individual's score would need to vary by more than 10.78 seconds for us to be confident that the difference is a real change. This is 2 seconds larger than the 8.7 seconds other studies have found (Goldberg et al., 2011), probably due to only conducting 3 trials. Now, lets take a look at the CoV% so we can compare scores using a percentage.
+
+```{r}
+mean_1 <- mean(both_legs$trial1)
+mean_2 <- mean(both_legs$trial2)
+sd_combined <- sqrt(((12 - 1) * sd(both_legs$trial1)^2 + (12 - 1) * sd(both_legs$trial2)^2) / (12 + 12 - 2))
+CoV <- (sd_combined / ((mean_1 + mean_2) / 2)) * 100
+cat("The coeffcient of variation is", round(CoV, 2),"%")
+```
+
+This CoV is in agreeance with an article conducted by Goldberg and colleagues (2011). 
+
+
+Now let's look at the reliability of each leg. 
+```{r}
+pairs.panels(test_retest)
+```
+
+
+```{r}
+test_retest |> #Fix the dashed line? 
+  ggplot(aes(x = right_trial1, y = right_trial2)) +
+  geom_point() +
+  geom_abline(intercept = 0, slope = 1, color = "red", linetype = "dashed", linewidth = 1.2, alpha = 0.8) +
+  geom_smooth(method = 'lm', alpha = 0.3) +
+  labs(title = "Right Leg Test Retest Reliability", x = "Trial 1 (sec)", y = "Trial 2 (sec)") +
+  theme_classic()
+```
+```{r}
+test_retest |> #Fix the dashed line? 
+  ggplot(aes(x = left_trial1, y = left_trial2)) +
+  geom_point() +
+  geom_abline(intercept = 0, slope = 1, color = "red", linetype = "dashed", linewidth = 1.2, alpha = 0.8) +
+  geom_smooth(method = 'lm', alpha = 0.3) +
+  labs(title = "Left Leg Test Retest Reliability", x = "Trial 1 (sec)", y = "Trial 2 (sec)") +
+  theme_classic()
+```
+```{r}
+icc_result_r <- ICC(right_icc)
+icc_value_r <- icc_result_r$results$ICC[2]
+ci_r <- icc_result_r$results[, c("ICC", "lower bound", "upper bound")]
+cat(paste('The ICC between trial one and trial two on the right leg was found to be', round(icc_value_r, 2),', which is considered to be moderate reliability. Additionally, the confidence interval is (0.14-0.91).')) 
+```
+
+```{r}
+
+icc_result_l <- ICC(left_icc)
+icc_value_l <- icc_result_l$results$ICC[2]
+ci_l <- icc_result_l$results[, c("ICC", "lower bound", "upper bound")]
+cat(paste('The ICC between trial one and trial two on the left leg was found to be', round(icc_value_l, 2),', which is considered to be moderate reliability. Additionally, the confidence interval is (0.04-0.85).')) 
+```
+From this we will calculate our SEM using the ICC we found for both right and left legs. 
+
+```{r}
+sem_r <- (sd(c(right_icc$right_trial1, right_icc$right_trial2))) * sqrt(1 - icc_value_r)
+cat(paste('The SEM for the right leg is', round(sem_r, 2), "when calculated from the ICC result."))
+```
+
+```{r}
+sem_l <- (sd(c(left_icc$left_trial1, left_icc$left_trial2))) * sqrt(1 - icc_value_l)
+cat(paste('The SEM for the left leg is', round(sem_l, 2), "when calculated from the ICC result."))
+```
+
+
+
+```{r}
+pr_data <- long_data |> 
+  group_by(participant_id) |> 
+  mutate(pr = max(score)) |> 
+  slice_sample(n = 1) |> 
+  select(-trial, -score) |> 
+  ungroup()
+```
+
+## Descriptive Statistics
+
+```{r}
+descriptivestats_pr <- pr_data |>
+   summarize(
+    mean = round(mean(pr, na.rm = TRUE),2),
+    sd= round(sd(pr, na.rm = TRUE),2),
+    median = round(median(pr, na.rm = TRUE),2),
+    IQR = round(IQR(pr, na.rm = TRUE), 2),
+    min = round(min(pr, na.rm = TRUE),2),
+    max = round(max(pr, na.rm = TRUE),2),
+    var = round(var(pr, na.rm = TRUE), 2),
+    count = n()) |> 
+  ungroup()
+datatable(descriptivestats_pr)
+```
+
+```{r}
+pr_data |> 
+ggplot(aes(y = pr, color = "blue")) + 
+  ggdist::stat_halfeye(
+    adjust = .5, 
+    width = .6, 
+    justification = -.2, 
+    .width = 0, 
+    point_colour = NA
+  ) + 
+  geom_boxplot(
+    width = .15, 
+    outlier.color = NA 
+  ) +
+  labs(title = "Distribution of PR Data", x = "PR", y = "Time (sec)") +
+  theme_bw()
+```
+
+
+
+## Criterion Assessment
+
+First, we will assess risk for ankle sprain using the the first trial of the balance test. The trial result is considered positive if they failed to balance for 10 seconds on each leg. The following relative risk for ankle sprain found by Trojian & McKeag are as follows...
+* Positive result = relative risk of 2.54 (95% CI, 1.02 to 6.03)
+* Athletes w/ no ankle taping and possible ankle sprain history = relative risk of 8.82 (95% CI, 1.07 to 72.70)
+* Athletes w/ no ankle taping and no ankle sprain history = relative risk of 7.18 (95% CI, 1.05 to 61.7)
+
+```{r}
+criterion <- long_data |> 
+  filter(trial == "trial1") |> 
+  group_by(participant_id) |> 
+  mutate(positive_test = case_when(
+    any(score < 10.00) ~ "Yes",  # If any score for the participant is below 10
+    TRUE ~ "No"                  # Otherwise, "No"
+  )) |> 
+  slice_sample(n = 1) |> 
+  ungroup() |> 
+  select(-trial, -side, -score)
+datatable(criterion)
+```
+```{r}
+results <- criterion |> 
+  group_by(positive_test) |> 
+  count()
+datatable(results)
+```
+Out of 12 participants, 5 resulted in a negative test and 7 resulted in a positive test.
+
+```{r}
+criterion |> 
+ggplot(aes(x = positive_test, y = balance_training)) +
+  geom_boxplot() +
+  labs(title = "Balance Training Hours by Pass/Fail of Ankle Criterion",
+       x = "Pass/Fail",
+       y = "Balance Training Hours")
+```
+
+
+```{r}
+t_test_result <- t.test(balance_training ~ positive_test, data = criterion)
+
+# Display the result
+print(t_test_result)
+```
+
+
+Now to identify individuals who would benefit from balance intervention, using the criterion standards in Linens et al. (2011) of 25.89 seconds
+
+```{r}
+cai_assessment <- pr_data |> 
+  group_by(participant_id) |> 
+  mutate(pr = max(pr)) |> 
+  slice_sample(n = 1) |> 
+  ungroup() |> 
+  group_by(participant_id) |> 
+  mutate(positive_test = case_when(
+    any(pr <= 25.89) ~ "Yes",  # If any score for the participant is below 10
+    TRUE ~ "No"                  # Otherwise, "No"
+  )) |> 
+  ungroup() |> 
+  select(-history, -side)
+datatable(cai_assessment)
+```
+
+
+
+
+
+```{r}
+cai_assessment |> 
+ ggplot(aes(x = positive_test, y = balance_training, color = positive_test)) + 
+  ## add half-violin from {ggdist} package
+  ggdist::stat_halfeye(adjust = .5, width = .6, justification = -.2, .width = 0, point_colour = NA) + 
+  geom_boxplot(width = .15, outlier.color = NA) +
+  labs(title = "Balance Training by Test Result", x = "Test Result", y = "Balance Training (avg hours per week)", color = "Postivie Test Result") +
+  theme_classic()
+  
+```
+From the above visualization, you can see that the only participants who passed the criteria practiced balance 2 hours a week. 
+
+```{r}
+t_test_result <- t.test(balance_training ~ positive_test, data = cai_assessment)
+
+print(t_test_result)
+```
+This t-test suggests a statistically significant difference in the mean balance training hours between the "No" and "Yes" groups for the positive test. The p value is lower than 0.05 and the 95% CI of 1.43-2.02, indicates that there is a significant difference between groups. However, age and gender were not controlled for and these results cannot be generalized. The small sample size will inflate the differences.
+
+## Investigating Relationships
+
+### Gender
+
+```{r}
+criterion |> 
+ ggplot(aes(x= positive_test, fill = gender)) + 
+    geom_bar(position = "dodge") +
+    labs(title = "Test Result by Gender-Ankle Sprain Risk", x= "Test Result") +
+    theme_classic()
+```
+```{r}
+cai_assessment |> 
+ ggplot(aes(x= positive_test, fill = gender)) + 
+    geom_bar(position = "dodge") +
+    labs(title = "Test Result by Gender-Ankle Instability Criteria", x= "Test Result") +
+    theme_classic()
+```
+
+
+
+```{r}
+gender <- long_data |> 
+  filter(trial == "trial1")
+ttest_result_g <- t.test(score ~ gender, data = long_data)
+ttest_result_g
+```
+There was not a statistical difference between genders for trial one balance ability. The p-value of 0.057 indicates that there is not a significant difference and the CI (-0.16, 9.55) includes zero, further supporting the claim of insignificant differences. 
+```{r}
+cohen.d(score ~ gender, data = long_data)
+```
+```{r}
+long_data |> 
+  ggplot(aes(x = gender, y = score, color = gender)) +
+  ggdist::stat_halfeye(adjust = .5, width = .6, justification = -.2, .width = 0, point_colour = NA) + 
+  geom_boxplot(width = .15, outlier.color = NA) +
+  labs(title = "Balance Score by Gender", x = "Gender", y = "Balance Score (seconds)", color = "Gender") +
+  theme_classic() 
+```
+
+### Age
+
+We will take a brief look at age, however we will not analyze it because our groups are not sample equally. 
+
+```{r}
+pr_data |> 
+  ggplot(aes(x = age, y = pr)) +
+  geom_point() +
+  geom_smooth(method = 'lm', alpha = 0.3) +
+  labs(title = "Age vs Balance Score", x = "Age (years)", y = "Score (seconds)") +
+  theme_classic()
+```
+
+### Balance Training
+
+Similarly with age, we won't take too close of a look at balance training because out sample size for each condition is insufficient. Around half of our paritipants do not have an balance training, which might skew our results. 
+
+```{r}
+balance <- long_data |> 
+  filter(trial == "trial1") |> 
+  select(balance_training, score)
+pairs.panels(balance)
+```
+
+## Normative Data Classification
+
+Now that we have classified data into criterion, let's take a look at normative standards by age. 
+
+```{r}
+normative <- pr_data |> 
+  mutate(
+  pr_classification = case_when(
+      age >= 18 & age <= 39 & pr < 15.2 ~ "Below Norms",  # For age 18-39
+      age >= 18 & age <= 39 & pr > 15.2  ~ "Above Norms",  # For age 18-39
+      age >= 40 & age <= 49 & pr < 12.7 ~ "Below Norms",  # For age 40-49
+      age >= 40 & age <= 49 & pr > 12.7  ~ "Above Norms",  # For age 40-49
+      age >= 50 & age <= 59 & pr < 8.3  ~ "Below Norms",  # For age 50-59
+      age >= 50 & age <= 59 & pr > 8.3   ~ "Above Norms",  # For age 50-59
+      age >= 60 & age <= 69 & pr < 4.4  ~ "Below Norms",  # For age 60-69
+      age >= 60 & age <= 69 & pr > 4.4   ~ "Above Norms",  # For age 60-69
+      TRUE ~ "Unknown"  # In case of unexpected values (e.g., age outside the expected ranges)
+    )
+  )
+normative
+```
+
+```{r}
+normative |>
+  group_by(participant_id) |> 
+  mutate(pr = max(pr)) |> 
+  slice_sample(n = 1) |> 
+  ungroup() |> 
+  group_by(pr_classification) |> 
+  count() |> 
+  datatable()
+  
+```
+8 participants were above norm on at least one leg, and 4 were below the norm on both legs. 
+## Limitations
+
+Some limitations of this assessment were the lack of balance standardization. Lack of equal sample groups in age and balance training. Additionally, the lack of a third trial to establish reliability. 
+
+## Practical Applications
+
+Discussed further in the presentation
+
+## References
+Presented in presentation
+
+
+

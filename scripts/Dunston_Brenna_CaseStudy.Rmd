@@ -1,0 +1,283 @@
+---
+title: "5400 Case Study"
+author: "Brenna Dunston"
+date: "2024-10-19"
+output: 
+  html_document: 
+    code_folding: hide
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(tidyverse)
+library(rmarkdown)
+library(knitr)
+library(psych)
+```
+
+# Case Study-Determining Reliability and Validity of Linear Position Transducers
+
+A important factor of sport performance is power movements like jumping. Having tools to efficiently measures jump performance in athletes is crucial for athlete monitoring. Jump performance in athletes can be measured with the gold standard of force plates, but force plates are not always practical. Linear position transducers are a portable and more practical tool for assessing jump performance. The aim of this statistical analysis was to assess the reliability and validity of the lpt.
+
+Due to the complete data from this study not being publicly available, the data will be simulated.
+
+## Methodological Approach
+
+This study was conducted to investigate concurrent validity. 38 participants completed a counter movement jump on a force plate while simultaneously using a lpt. Validity was assessed via a 95% limits of agreements test (LoA), a paired t-tests (p \< .05), and Cohen's d. A Bland-Altman plot was used to display the LoA. To interpret the Bland-Altman plot, readers should be looking for the following things...
+
+-   Where is the mean difference line is in relation to zero? This will provide insight into bias.
+-   How many points lie outside the limit of agreements lines? Too many points outside the line indicates poor agreement between the two tests.
+-   What is the distribution of the points on the plot? The points should be scattered evenly across the plot to indicate agreement across a the range of values.
+-   How large is the range between the 95% limits? A larger range would indicate that there is more variability between testing methods.
+
+Reader's should then use the paired t-test results to confirm what was observed in the Bland-Altman plot. Look for these numbers in the paired t-test results...
+
+-   Mean difference (this will confirm the mean difference from the plot)
+-   Range of the confidence intervals (how confident are we of the bias?)
+-   p-value (how extreme are our results? Can we reject the null hypo?)
+
+To see the effect size of any bias found, readers should interpret Cohen's d using these guidelines...
+
+-   0.0-0.2 is small/negligible
+-   0.2-0.5 is small
+-   0.5-0.8 is medium
+-   0.8 and above is large
+
+In terms of reliability, this study was conducted to investigate test retest reliability. 38 participants conducted the same test (lpt) on two different days. Note the days were close enough together that this could not be considered stability reliability. Relative reliability was assessed using the ICC. Absolute reliability was assessed by calculating the standard error of measurement (SEM). Readers should use the following guides to interpret the calculated ICC...
+
+-   0.5 or below is poor
+-   0.5-0.75 is moderate
+-   0.75-0.80 is good
+-   0.90 and above is excellent
+
+Readers should be looking for an SEM closer to zero, as this would indicate less measurement error and higher reliability. In addition to calculating the SEM, it has also been calculated in terms of percentage of the mean. A lower percentage would indicate less measurement relative to the mean.
+
+While not a direct measure of reliability, the coefficient of variation (CoV) has also been included to assess relative variability of the data. A lower CoV % would indicate higher reliability because it indicates better consistency.
+
+## Descriptive Statistics
+
+```{r, simulate data and objects}
+set.seed(5400) 
+participant_v <- c(1:38)
+force_plate <- rnorm(38, mean = 20.7, sd = 2.75) #simulate data for the force plate
+lpt <- rnorm(38, mean = 27.7, sd = 2.75) #simulate data for the lpt
+validity_data <- tibble(participant_v, force_plate, lpt)
+validity_data <- validity_data |> 
+  group_by(participant_v) |> 
+  mutate(difference = lpt - force_plate, 
+         mean_value = mean(force_plate:lpt)
+         )
+set.seed(5400)
+day_1 <- rnorm(38, mean = 34.4, sd = 3.8) #simulate data for test using mean & sd for trial 1
+day_2 <- (day_1 * 0.99) + runif(38, min = -2.6, max = 2.6) #simulate data for the re-test by using the mean and sd for trial 2
+reliability_data <- tibble(day_1, day_2) |> 
+  mutate(participant_r = as.factor(c(1:38)),
+         difference = day_2 - day_1) |> 
+  select(participant_r, day_1, day_2, difference)
+icc_reliability <- reliability_data |> 
+  select(day_1, day_2)
+```
+
+Reliability (Test-Retest) Data Table
+
+```{r}
+test_retest_data <- tibble(day_1, day_2) |> 
+  mutate(participant_r = as.factor(c(1:38))) |> 
+  select(participant_r, day_1, day_2)
+print(test_retest_data)
+```
+
+Summary Statistics of Reliability
+
+```{r}
+r_summ <- tibble(day_1, day_2) |> 
+  summary()
+r_summ
+```
+
+```{r}
+sd_1 <- sd(day_1)
+sd_2 <- sd(day_2)
+cat(paste("The standard deviation of trial one is:", sd_1, 'and the standard deviation of trial two is', sd_2))
+```
+
+```{r}
+var_1 <- var(day_1)
+var_2 <- var(day_2)
+cat(paste("The variance of trial one is:", var_1, 'and the variance of trial two is', var_2))
+```
+
+Concurrent Validity Data Table
+
+```{r}
+concurrent_validity_data <- tibble(force_plate, lpt) |> 
+  mutate(participant_v = as.factor(c(1:38))) |> 
+  select(participant_v, force_plate, lpt)
+concurrent_validity_data
+```
+
+Summary Statistics of Validity
+
+```{r}
+v_summ <- tibble(force_plate, lpt) |> 
+  summary()
+v_summ
+```
+
+```{r}
+sd_fp <- sd(force_plate)
+sd_lpt <- sd(lpt)
+cat(paste("The standard deviation of the force plate trial is:", sd_fp, 'and the standard deviation of the LPT trial is', sd_lpt))
+```
+
+```{r}
+var_fp <- var(force_plate)
+var_lpt <- var(lpt)
+cat(paste("The variance of the force plate trial one is:", var_fp, 'and the variance of the lpt trial is', var_lpt))
+```
+
+## Validity Results
+
+```{r simulate data}
+set.seed(5400) 
+participant_v <- c(1:38)
+force_plate <- rnorm(38, mean = 20.7, sd = 2.75) #simulate data for the force plate
+lpt <- rnorm(38, mean = 27.7, sd = 2.75) #simulate data for the lpt
+validity_data <- tibble(participant_v, force_plate, lpt)
+validity_data <- validity_data |> 
+  group_by(participant_v) |> 
+  mutate(difference = lpt - force_plate, 
+         mean_value = mean(force_plate:lpt)
+         )
+validity_data
+mean_difference <- mean(validity_data$difference)
+cat(paste('The mean difference is', round(mean_difference, 2)))
+```
+
+### Bland-Altman Plot
+
+```{r}
+sd_difference <- sd(validity_data$difference)
+loa_upper <- mean_difference + 1.96 * sd_difference
+loa_lower <- mean_difference - 1.96 * sd_difference
+validity_data$outside_loa <- (validity_data$difference < loa_lower) | (validity_data$difference > loa_upper)
+validity_data |> 
+  ggplot(aes(x = mean_value, y = difference)) +
+  geom_point(aes(color = outside_loa), size = 2) +
+  geom_hline(yintercept = mean_difference, color = "chartreuse", linetype = "dashed", linewidth=1) +
+  geom_hline(yintercept = loa_upper, color = "black", linetype = "dotted") +   # Upper limit
+  geom_hline(yintercept = loa_lower, color = "black", linetype = "dotted") +   # Lower limit
+  geom_hline(yintercept = 0, color = "blue", linetype = "solid") +
+  labs(title = "Bland-Altman Plot",
+       x = "Mean of Force Plate and LPT",
+       y = "Difference (Force Plate - LPT)") +
+  scale_color_manual(values = c("black", "red"), 
+                     labels = c("Within LoA", "Outside LoA")) +  # Custom colors
+  theme_minimal() +
+  theme(legend.title = element_blank()) 
+
+```
+
+The points in th plot above are generally evenly scattered and only show one point outside the 95% limit lines (you can see this point is red instead of black). However, the mean difference looks to be around 6 (the green dashed line), which is not close to zero and indicates bias is present. More investigation is required. \### Paired t-test
+
+```{r}
+t.test(lpt, force_plate, paired=T)
+```
+
+The results of the paired t-test above confirm that the mean difference is 5.99 with confidence levels of 4.45-7.54. This is signficantly different from zero and indicates that one test overestimates the other. The p-value of 2.147e-09 indicates that our result is quite extreme and we can reject the hypothesis that the mean is equal to zero. Let's calculate the effect size of the bias now.
+
+### Cohen's d
+
+```{r}
+effect_size <- mean(validity_data$difference) / sd(validity_data$difference)
+cat(paste('The calculated cohens d is', round(effect_size, 2), 'which indicates that the effect size is large.'))
+```
+
+Because the cohen's d is quite large, it suggests that the two tests do not align well and they may not be measuring the construct of jump height similarly.
+
+## Reliability Results
+
+```{r}
+set.seed(5400)
+day_1 <- rnorm(38, mean = 34.4, sd = 3.8) #simulate data for test using mean & sd for trial 1
+day_2 <- (day_1 * 0.99) + runif(38, min = -2.6, max = 2.6) #simulate data for the re-test by using the mean and sd for trial 2
+reliability_data <- tibble(day_1, day_2) |> 
+  mutate(participant_r = as.factor(c(1:38)),
+         difference = day_2 - day_1) |> 
+  select(participant_r, day_1, day_2, difference) 
+reliability_data
+```
+
+### Visualization of Test Retest Reliability
+
+A quick analysis of the reliability shows a pearson coefficient of 0.92 (upper right) and rough visualizations of the two trials of lpt.
+
+```{r}
+pairs.panels(icc_reliability) #use the df made for the ICC code found below
+```
+
+Let's take a closer look at that scatter plot of the the two trials...
+
+```{r}
+reliability_data |> 
+  ggplot(aes(x = day_1, y = day_2)) +
+  geom_point() +
+  geom_smooth(method = 'lm') +
+  labs(title = 'Test-Retest Reliability Correlation of Linear Position Transducers', x = 'Day 1 Jump Height (cm)', y = 'Day 2 Jump Height (cm)')
+```
+
+### ICC of Reliability
+
+```{r}
+icc_reliability <- reliability_data |> 
+  select(day_1, day_2)
+icc_result <- ICC(icc_reliability)
+icc_value <- icc_result$results$ICC[2]
+cat(paste('The ICC between trial one and trial two was found to be', round(icc_value, 2),', which is considered to be excellent reliability')) 
+```
+
+The ICC calculated above falls into the excellent reliability range according to the criterion presented in the methodology. Now let's take a look at the SEM...
+
+Standard Error of Measurement
+
+```{r}
+SEM_1 <- sd(reliability_data$difference)/sqrt(2)
+SEM_2 <- (sd(c(reliability_data$day_1, reliability_data$day_2))) * sqrt(1 - icc_value)
+cat(paste('The SEM is', round(SEM_1, 2), 'when calculated from the difference scores and', round(SEM_2, 2), "when calculated from the ICC result."))
+```
+
+This SEM indicates that the observed score may vary 1.15 cm from the participants true score due to measurement error. If we consider this in relation to the mean...
+
+```{r}
+mean_1 <- 35.5322263
+mean_2 <- 35.8394289
+sem_percent <- ((1.15 / ((mean_1 + mean_2) / 2)) * 100)
+cat(paste('The SEM is', round(sem_percent, 2), '% of the mean score.'))
+```
+
+This would indicate that the SEM is relatively low in proportion to the mean score.
+
+### Coefficient of Variation
+
+```{r}
+sd_combined <- sqrt(((38 - 1) * sd_1^2 + (38 - 1) * sd_2^2) / (38 + 38 - 2))
+CoV <- (sd_combined / ((mean_1 + mean_2) / 2)) * 100
+cat(paste('The coefficient of variation is', round(CoV, 2), '%.'))
+```
+
+The CoV is not a direct measure of reliability, but the lower value obtained above indicates low to moderate variability, which is good in terms of reliability. Note CoV does not account for random error from true variability.
+
+### Minimal Detectable Change
+
+```{r}
+md <- SEM_2 * sqrt(2) * 1.96
+cat(paste("Based on the 95% Confidence Interval, a participant's score would need to change by a minimum of", round(md, 2), "cm between trials to be considered significant or meaningful."))
+```
+
+## Evaluation and Concluding Remarks
+
+Due to the mean difference of 5.99 found using a Bland-Altman plot and confirmed with a paired t-test, the lpt seems to overestimate jump height by a factor of 5.99 cm. The effect size of 1.27 indicates that the differences between the two methods were pronounced and do not align well. Because of these differences, the lpt was determined to have low concurrent validity in assessing jump height within the participant group assessed.
+
+The relative reliability of the lpt was assessed using ICC and found to be 0.91 (excellent). The absolute reliability was assessed by calculating the SEM, which was 1.15 cm (or 1.07 calculated via difference scores). The calculated SEM was close to zero and was found to be 3.22% relative to the mean. This indicates a low level of measurement error in the lpt. Combined, the ICC and SEM indicate that the lpt is a reliable measure of jump height within the participant group assessed. Additionally, the CoV was found to 10.89%. This indicated low to moderate relative variability, which is associated with better reliability.
+
+Overall, after statistical analysis of the study results, the Linear Position Transducer (lpt) can be considered a jump height test with high test-retest reliability but low concurrent validity.

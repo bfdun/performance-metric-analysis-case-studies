@@ -1,0 +1,501 @@
+---
+title: "Case Study 2 Final Draft"
+author: "Brenna Dunston"
+date: "2024-11-09"
+output: 
+  html_document: 
+    code_folding: hide
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(tidyverse)
+library(rmarkdown)
+library(knitr)
+library(psych)
+library(here)
+library(janitor)
+library(DT) 
+library(ggpubr)
+library(dunn.test)
+library(effectsize)
+```
+
+# Case Study 2 - Assessment of Sprint Ability in Elite Youth Soccer Players
+
+Speed is an important aspect of the sport of soccer. Bursts of speed are necessary while playing the sport and critical to success. In this case study, a group of 90 elite female youth soccer players from the same soccer club were assessed. The test used to measure speed was the 10 m sprint test. This case study took a norm based approach, comparing the scores to the standards of other well-trained female soccer players. The assessment will serve as feedback for the club's training protocols and whether or not more speed training should be implemented. The coach asked which of the players need additional sprint training, therefore players with below average 10m ability will be identified. The coach is curious whether a specific position have better sprinting abilities. Additionally, two trials of the test will be performed in order to confirm the test retest reliability of the 10m sprint so coaches can have confidence in repeating the measurement moving forward.
+
+## Simulate Data
+
+```{r}
+set.seed(5400)
+
+df_g <- data.frame(test = rep("10 m sprint", 10), position = rep("goalkeeper", 10), score = rnorm(10, mean = 2.31, sd = .06))
+df_d <- data.frame(test = rep("10 m sprint", 20), position =  rep("defender", 20), score = rnorm(20, mean = 2.25, sd = .05))
+df_m <- data.frame(test = rep("10 m sprint", 35), position = rep("midfielder", 35), score = rnorm(35, mean = 2.18, sd = .10))
+df_f <- data.frame(test = rep("10 m sprint", 25), position = rep("forward", 25), score = rnorm(25, mean = 2.20, sd = .06))
+
+df_sprint <- rbind(df_g, df_d, df_m, df_f) |> 
+  mutate(player_id = c(1:90)) |> 
+  select(player_id, position, test, score)
+
+df_g_v <- data.frame(test = rep("Vertical jump", 10), position = rep("goalkeeper", 10), score = rnorm(10, mean = 39.2, sd = 4.0))
+df_d_v <- data.frame(test = rep("Vertical jump", 20), position =  rep("defender", 20), score = rnorm(20, mean = 39.6, sd = 5.4))
+df_m_v <- data.frame(test = rep("Vertical jump", 35), position = rep("midfielder", 35), score = rnorm(35, mean = 38.0, sd = 3.8))
+df_f_v <- data.frame(test = rep("Vertical jump", 25), position = rep("forward", 25), score = rnorm(25, mean = 39.9, sd = 4.8))
+
+df_vertical <- rbind(df_g_v, df_d_v, df_m_v, df_f_v) |> 
+  mutate(player_id = c(1:90)) |> 
+  select(player_id, position, test, score)
+
+df_trial1 <- rbind(df_sprint, df_vertical)
+
+error_sprint <- rnorm(90, mean = 0, sd = sqrt(1 - 0.9^2) * sd(df_sprint$score))
+sprint_trial2 <- data.frame(score_two = (0.90 * (df_sprint$score - mean(df_sprint$score)) + mean(df_sprint$score) + error_sprint))
+  
+sprint_reliability <- cbind(df_sprint, sprint_trial2) |> 
+  mutate(difference = score_two - score)
+```
+
+## Methodology
+
+To answer the question of which players need additional sprint training, the data will be analyzed using...
+
+-   Descriptive Statistics
+-   Visualization Plots of data and residuals
+-   Shapiro-Wilk test to assess normality
+-   QQ Plot to assess normality
+-   ANOVA to assess positional differences
+-   Tukey Test to assess positional differences
+
+In terms of reliability, this study was conducted to investigate test retest reliability. 90 participants conducted the same test (10m) on two different days. (Note the days were far enough apart that this could be considered stability reliability). Relative reliability was assessed using the ICC. Absolute reliability was assessed by calculating the standard error of measurement (SEM). Readers should use the following guides to interpret the calculated ICC...
+
+-   0.5 or below is poor
+-   0.5-0.75 is moderate
+-   0.75-0.80 is good
+-   0.90 and above is excellent
+
+Readers should be looking for an SEM closer to zero, as this would indicate less measurement error and higher reliability. In addition to calculating the SEM, it has also been calculated in terms of percentage of the mean. A lower percentage would indicate less measurement relative to the mean.
+
+From the SEM, the Minimal Detectable Change (MDC) will be calculated. This will serve as a tool for the coaches moving forward. The MDC will allow the coach to determine if a change in a players score is due to real change or just random variation.
+
+The coefficient of variation (CoV) has also been included as a tool to compare player score changes in terms of percent. If a score has a percent change higher than the CoV than we can be confident that there was a change.
+
+## Descriptive Statistics
+
+```{r}
+descriptivestats <- df_trial1 |>
+  filter(test == "10 m sprint") |> 
+   summarize(
+    mean = round(mean(score, na.rm = TRUE),2),
+    sd= round(sd(score, na.rm = TRUE),2),
+    median = round(median(score, na.rm = TRUE),2),
+    IQR = round(IQR(score, na.rm = TRUE), 2),
+    min = round(min(score, na.rm = TRUE),2),
+    max = round(max(score, na.rm = TRUE),2),
+    var = round(var(score, na.rm = TRUE), 2),
+    count = n()) |> 
+  ungroup()
+datatable(descriptivestats)
+```
+
+Above is a data table with the descriptive statistics of the 10 m sprint scores collected (displayed in seconds).
+
+## Assess Normality of Data
+
+### Visualize the Data
+
+```{r}
+df_sprint |> 
+  ggplot(aes(x = score)) +
+  geom_histogram(alpha = 0.3, color = "black", fill = "blue", binwidth = 0.01) +
+  geom_density(alpha = 0.5) +
+  labs(title = "10m Sprint Scores of 90 Female Soccer Players") +
+  theme_bw()
+```
+
+In the visualization above we can see that the data seems to have a normal distribution. Let's take a further look at the distribution by creating a rain cloud plot.
+
+```{r}
+ggplot(df_sprint, aes(x = test, y = score, color = test)) + 
+ 
+  ggdist::stat_halfeye(
+
+    adjust = .5, 
+ 
+    width = .6, 
+    
+    justification = -.2, 
+  
+    .width = 0, 
+    point_colour = NA
+  ) + 
+  geom_boxplot(
+    width = .15, 
+    outlier.color = NA 
+  ) +
+  labs(title = "Distribution of 10m Sprint Data", x = "10m Sprint", y = "Time (sec)") +
+  theme_bw()
+```
+
+Again, a fairly normal distribution.
+
+### Shaprio-Wilk Test
+
+To further assess our normality we will conduct a Shapiro-Wilk normality test. Readers should be looking for a W value close to 1.00 and p-value greater than 0.05 to indicate a normal distribution.
+
+```{r}
+shapiro_10m <- shapiro.test(df_sprint$score)
+shapiro_10m
+cat(paste("The Shapiro-Wilk test resulted in a W value of", round(shapiro_10m$statistic, 3), "and a p-value of", round(shapiro_10m$p.value, 3), "indicating normal data distribution."))
+```
+
+### QQ Plot
+
+To confirm the Shapiro-Wilk test and our visualizations, lets make a QQ plot. Readers should be looking for points that fall along the line of best fit, the absence of an S shape or curving at the ends.
+
+```{r}
+qq_sprint <- ggqqplot(df_sprint$score, 
+         title = "QQ Plot for 10m Sprint",
+         ggtheme = theme_minimal())
+qq_sprint2 <- ggqqplot(sprint_reliability$score_two, 
+         title = "QQ Plot for Trial 2",
+         ggtheme = theme_minimal())
+qq_combined <- cowplot::plot_grid(qq_sprint, qq_sprint2) 
+qq_combined
+```
+
+Both these QQ plots look to be fairly normal, with the points falling along the line and minimal curving at the ends.
+
+## Reliability and Validity
+
+A review by Altmann et al. (2019) found that the 10m sprint test to be a valid assessment of maximal speed and acceleration in soccer players. While speed with changes of direction are also important to the game, linear speed is an important aspect during transitional plays in soccer. Additionally, the test is known to be highly reliable and supports the test-retest reliability analysis shown below.
+
+```{r}
+icc_reliability <- sprint_reliability |> 
+  select(score, score_two)
+pairs.panels(icc_reliability)
+```
+At first glance we see a correlation of 0.92, which could mean great reliability. Let's take a closer look at the correlation plot.
+```{r}
+sprint_reliability |> 
+  ggplot(aes(x = score, y = score_two)) +
+  geom_point() +
+  geom_abline(intercept = 0, slope = 1, color = "red", linetype = "dashed", linewidth = 1.2, alpha = 0.8) +
+  geom_smooth(method = 'lm', alpha = 0.3) +
+  labs(title = 'Test-Retest Reliability Correlation of 10m Sprint Test', x = 'Trial 1 Time (sec)', y = 'Trial 2 Time (sec)') +
+  theme_classic()
+```
+
+At first glance, this graphs shows a linear relationship between trial one and trial two. The dashed red line is what total agreement looks like, and as you can see it is fairly close to the line of best fit (shown in blue). There looks to be high amount of correlation, let's see what the analysis says.
+
+```{r}
+icc_reliability <- sprint_reliability |> 
+  select(score, score_two)
+icc_result <- ICC(icc_reliability)
+icc_value <- icc_result$results$ICC[2]
+ci <- icc_result$results[, c("ICC", "lower bound", "upper bound")]
+cat(paste('The ICC between trial one and trial two was found to be', round(icc_value, 2),',which is considered to be excellent reliability. Additionally, the confidence interval is (0.88-0.94).')) 
+
+```
+
+The ICC calculated above falls into the excellent reliability range according to the criterion presented in the methodology. Our confidence interval of 0.88-0.94 indicates that 95% of the time the ICC will be in that range. Now let's take a look at the SEM...
+
+```{r}
+SEM_1 <- sd(sprint_reliability$difference)/sqrt(2)
+SEM_2 <- (sd(c(sprint_reliability$score, sprint_reliability$score_two))) * sqrt(1 - icc_value)
+cat(paste('The SEM is', round(SEM_1, 2), 'when calculated from the difference scores and', round(SEM_2, 2), "when calculated from the ICC result."))
+```
+
+This SEM indicates that the observed score may vary 0.03 seconds from the participants true score due to measurement error. If we consider this in relation to the mean...
+
+```{r}
+mean_1 <- mean(sprint_reliability$score)
+mean_2 <- mean(sprint_reliability$score_two)
+sem_percent <- ((SEM_1 / ((mean_1 + mean_2) / 2)) * 100)
+cat(paste('The SEM is', round(sem_percent, 2), '% of the mean score.'))
+```
+
+This would indicate that the SEM is relatively low in proportion to the mean score. 1 percent measurement error is quite close to zero. Taking into account the SEM and ICC, the 10m sprint seems to have high test retest reliability.
+
+## Change Scores
+
+In order for coaches and trainers to assess whether differences in scores are a real change or just random variation we need to calculate the minimal detectable change (MDC).
+
+```{r}
+MDC<-SEM_1*sqrt(2)*1.96
+cat("the MDC is", round(MDC,2),"(secs)")
+```
+
+This would indicate that a player's score would be to vary by more than 0.08 seconds for us to be confident that the difference is a real change. Now, lets take a look at the CoV% so we can compare scores using a percentage.
+
+```{r}
+sd_combined <- sqrt(((90 - 1) * sd(sprint_reliability$score)^2 + (90 - 1) * sd(sprint_reliability$score_two)^2) / (90 + 90 - 2))
+CoV <- (sd_combined / ((mean_1 + mean_2) / 2)) * 100
+```
+
+```{r}
+cv<-round(sd(sprint_reliability$score)/mean(sprint_reliability$score)*100,2)
+
+cat("The coeffcient of variation is", round(cv, 2),"%")
+
+```
+
+This would indicate that unless we see a score that differs more 4.55%, there is no change or difference. To assess scores for a meaningful change we can double the CoV%.
+
+```{r}
+dcv <- round(cv * 2, 2)
+cat(paste("A change greater than", dcv, "% would give us confidence that there is a meaningful change in the player's score and is not a change due to random variation or measurement error."))
+```
+
+## Results
+
+Now that we have assessed normality and change scores we can look at the data we have collected so far. Well-trained female soccer players complete the 10m in 2.1-2.3 seconds and this will be the normative standard used to assess the players in this study.
+
+-   scores \>= 2.3 sec will be considered below average
+-   scores =2.1-2.3 sec will be considered average
+-   scores \<= 2.1 sec will be considered above average
+
+### Percentile Rank
+
+First let's calculate the percentile rank of the data collected.
+
+```{r}
+pct_rank <- df_sprint %>%
+  mutate(percentile_rank = round(percent_rank(score) * 100, 1),
+         score = round(score, 2)) |> 
+  arrange(percentile_rank)
+datatable(pct_rank)
+```
+
+The above data table shows the players based on their percentile rank. This can serve as a tool for coaches and trainers. Now we will compare the scores to normative standards and classify them.
+
+```{r}
+results <- df_sprint |> 
+  mutate(result = case_when(
+  score > 2.3 ~ "below average",
+  score > 2.1 ~ "average",
+  score < 2.1 ~ "above average"
+  )) |> 
+  select(-test)
+datatable(results)
+```
+
+In the data table above, the players have been compared to the normative standards and classified accordingly.
+
+### How many players in the club have a below average 10m sprint?
+
+```{r}
+pct_result <- results |> 
+  group_by(result)|> 
+  count() |> 
+  mutate(percentage = round(n/90, 2))
+datatable(pct_result)
+```
+
+This shows that 16% of the players are below average in their sprint ability, 12% are above average and 72% are average. Before we prescribe sprint training to all the players in the below average classification, let's see if there is a relationship between sprint ability and player position.
+
+```{r}
+results |> 
+  filter(result == "below average") |> 
+  ggplot(aes(x = position, fill = position)) +
+  geom_bar() +
+  labs(title = "Below Average Sprint Times") +
+  theme_bw()
+```
+
+From the graph above we can see that half of the players with below average sprint times (7/14) are goalkeepers. Goalkeepers have different performance requirements for games than the field players do. Normally, they are jumping and diving more than sprinting. Perhaps they performed better in other tests. We will quickly analyze some vertical jump data the team had previously collected and see if it brings some insight.
+
+```{r}
+shapiro_vertical <- shapiro.test(df_vertical$score)
+shapiro_vertical
+cat(paste("The Shapiro-Wilk test resulted in a W value of", round(shapiro_10m$statistic, 3), "and a p-value of", round(shapiro_10m$p.value, 3), "indicating normal data distribution."))
+```
+
+```{r}
+df_vertical |> 
+  ggplot(aes(x= position, y= score)) + 
+    geom_boxplot(aes(fill = position)) +
+    labs(y="Vertical Jump Height (cm)", x="Position") +
+    theme_classic()
+```
+
+You can see from the graph above that the goalkeepers still scored lower on the vertical jump height test than the other positions. We would need to analyze the vertical jump more to see if the differences were significant.
+
+Let's further assess the positional differences.
+
+## Assessing Relationships between Positions
+
+```{r}
+df_sprint |> 
+  ggplot(aes(y = player_id, x = score)) +
+  geom_point(aes(color = position)) +
+  labs(x="10m Sprint Time",
+       y="Player ID")+
+  labs(title = "10m Sprint Score of each Player by Position") +
+  theme_bw()
+```
+
+From the graph above we can see that the goalkeepers seem to be clustered towards the right of the graph, the forwards are grouped towards the left, and the midfielders seem to have the most variability. Let's visualize this distribution even further.
+
+```{r}
+df_sprint |> 
+  ggplot(aes(x= position, y= score)) + 
+    geom_boxplot(aes(fill = position))+
+    labs(y="Sprint Time (sec)", x="Position")+
+    theme_classic()
+```
+
+Again, we can see that the midfielders are the most variable group (could be because they were the largest sample) and have the fastest sprinters. Forwards are faster on average than the midfielders because they have less data spread, and the goalkeepers seem to be slowest by a margin.
+
+```{r}
+ggplot(df_sprint, aes(x = position, y = score, color = position)) + 
+  ## add half-violin from {ggdist} package
+  ggdist::stat_halfeye(
+    ## custom bandwidth
+    adjust = .5, 
+    ## adjust height
+    width = .6, 
+    ## move geom to the right
+    justification = -.2, 
+    ## remove slab interval
+    .width = 0, 
+    point_colour = NA
+  ) + 
+  geom_boxplot(
+    width = .15, 
+    outlier.color = NA 
+  ) +
+  labs(title = "Distribution of Data by Position", x = "Player Position", y = "10m Sprint Time (sec)")
+```
+
+The plot above helps us see the distribution even more clearly.
+
+### ANOVA Comparison
+
+Now that we think there is a difference between positions in 10m sprint time, let's see if those differences are significant by running an ANOVA test. The ANOVA test will tell us whether there is a significant difference between any of the positions. Readers should be looking for a p-value that is lower than 0.05, as this will allow us to reject the null hypothesis.
+
+```{r}
+anova_result <- aov(score ~ position, data = df_sprint)
+
+# Summary of the# Summary of the# Summary of the ANOVA
+summary_anova_result<-summary(anova_result)
+summary_anova_result
+```
+
+The p-value looks to be smaller than 0.05, this means there is a difference between at least one of the groups. Now we need to run more tests to figure out which groups are significantly different. We will run a Tukey Test to figure out which positions are different. Readers should be looking for a p-value less than 0.05 to indicate a significant difference.
+
+```{r}
+tukey_result <- TukeyHSD(anova_result)
+print(tukey_result)
+```
+
+```{r}
+tukey_results <- data.frame(
+  comparison = c("forward-defender", "goalkeeper-defender", "midfielder-defender",
+                 "goalkeeper-forward", "midfielder-forward", "midfielder-goalkeeper"),
+  diff = c(-0.05612046, 0.10140836, -0.07358905, 0.15752882, -0.01746858, -0.17499741),
+  lwr = c(-0.12350364, 0.01441706, -0.13654873, 0.07348724, -0.07628544, -0.25553570),
+  upr = c(0.01126271, 0.18839966, -0.01062937, 0.24157040, 0.04134827, -0.09445911),
+  p_adj = c(0.1364570, 0.0156110, 0.0152525, 0.0000251, 0.8641527, 0.0000010)
+)
+
+# Add a column to indicate if the difference is significant
+tukey_results$Significant <- ifelse(tukey_results$p_adj < 0.05, "Yes", "No")
+
+# Display the datatable
+datatable(tukey_results, options = list(pageLength = 6)) %>%
+  formatStyle(
+    'Significant',
+    target = 'row',
+    backgroundColor = styleEqual(c("Yes", "No"), c("lightgreen", "lightcoral"))
+  )
+
+```
+
+The results of the Tukey test have been simplified in the table above. We can see that the only groups that did not have a significant difference were the midfielders-forwards and forwards-defenders. This shows us that the goalkeepers are significantly different from every other position on the field. The table also displays the CI (upr and lwr). But we need to confirm that these results are accurate by looking at the normality of the residuals. The reader should be looking for the classic bell shaped curve to indicate normality.
+
+#### Residuals
+
+```{r}
+hist(residuals(anova_result), main = "Histogram of Residuals Anova", xlab = "Residuals")
+```
+
+The histogram above seems to indicate a normal distribution of the residuals! Let's confirm this with a Shapiro-Wilk test. Remember, we want a W-value close to 1 and a p-value greater than 0.05.
+
+```{r}
+shapiro.test(residuals(anova_result))
+```
+
+The W value is 0.99 and the p-value is 0.91, that confirms our histogram and indicates that our residuals are normal. This means the results from our ANOVA is valid.
+
+### Effect Size
+Now that we know there a statistically significant differences between position we can look at the effect size using Cohen's D. Readers should use the following to interpret the results...
+
+* small effect = 0.2
+* medium effect = 0.5
+* large effect = 0.8 or higher
+
+```{r}
+position_pairs <- combn(unique(df_sprint$position), 2, simplify = FALSE)
+
+# Calculate Cohen's d for each pair and store results in a list
+pairwise_d_results <- lapply(position_pairs, function(pair) {
+  # Filter data for each pair of positions
+  data_pair <- df_sprint %>% filter(position %in% pair)
+  
+  # Calculate Cohen's d
+  d_result <- cohens_d(score ~ position, data = data_pair, pooled_sd = TRUE)
+  
+  # Add comparison labels for reference
+  d_result$comparison <- paste(pair, collapse = " vs. ")
+  
+  return(d_result)
+})
+
+# Combine results into a single data frame
+pairwise_d_df <- do.call(rbind, pairwise_d_results)
+
+# View results
+print(pairwise_d_df)
+```
+```{r}
+cohen_d_results <- data.frame(
+  Comparison = c("goalkeeper vs. defender", "goalkeeper vs. midfielder", 
+                 "goalkeeper vs. forward", "defender vs. midfielder", 
+                 "defender vs. forward", "midfielder vs. forward"),
+  Cohens_d = c(-1.93, 1.64, -2.30, 0.78, 0.98, 0.18),
+  CI_Lower = c(-2.83, 0.84, -3.21, 0.20, 0.36, -0.34),
+  CI_Upper = c(-1.01, 2.41, -1.37, 1.34, 1.60, 0.69)
+)
+
+classify_effect_size <- function(d) {
+  if(abs(d) < 0.2) {
+    "Very Small"
+  } else if(abs(d) < 0.5) {
+    "Small"
+  } else if(abs(d) < 0.8) {
+    "Medium"
+  } else {
+    "Large"
+  }
+}
+
+cohen_d_results <- cohen_d_results %>%
+  mutate(Effect_Size = sapply(Cohens_d, classify_effect_size))
+
+datatable(cohen_d_results, options = list(pageLength = 10),
+          colnames = c("Comparison", "Cohen's d", "95% CI Lower", "95% CI Upper", "Effect Size"))
+
+```
+In the data table above we can see that effect size for the differences between goalkeepers and other positions were large. The gives us even more confidence in the difference between position. The only effect size that was small was the midfielder vs forward difference. We have to take into account that the forward/defender and forward/midfielder differences were found to be non significant. Additionally, the cohen's d is affect by sample size and the results should be interpreted with this kept in mind.
+
+## Conclusion
+
+From our analysis we can conclude that 16% of the team is below average in 10m sprint time compared to other well-trained female soccer players. Within this below average group, half are of the goalkeeper position. We found that the goalkeepers are significantly different than every other field position, with large effect sizes. Because the requirements of a goalkeepers are different than that of field players, I would recommend to the coach that more data be collected in different realms before training changes are made. Tests like agility, reaction time, strength, etc should be tested to gain a perspective on the big picture. Because of the different demands of the position, goalkeepers might benefit more from other forms of training. However, from briefly looking at vertical jump we can see that the goalkeepers seemed to score lower in that area as well. Considering 84% of the club was at or above average sprint time, I would suggest only implementing additional sprint training to the players classified as below average during workouts and not taking away from practice time. If the coach wanted all players to be at a certain sprinting speed this data could be used to modify training for those in need of improvements. I would highly suggest that the Coach tailor training towards the demands of the position rather than focus on increasing sprint ability for everyone on the team. But again, more data needs to be collected in order to assess the larger picture. Additionally, our analysis revealed the 10 m test to be have high test retest reliability.
+
+### References
+
+-   Altmann, S., Ringhof, S., Neumann, R., Woll, A., & Rumpf, M. C. (2019). Validity and reliability of speed tests used in soccer: A systematic review. PloS one, 14(8), e0220982. <https://doi.org/10.1371/journal.pone.0220982>
+-   Pivovarniček, P., Pupiš, M., Tonhauserová, Z., & Tokárová, M. (2013). LEVEL OF SPRINT AND JUMP ABILITIES AND INTERMITTENT ENDURANCE OF ELITE YOUNG SOCCER PLAYERS AT DIFFERENT POSITIONS. Sportlogia, 9(2), 109–117. <https://doi.org/10.5550/sgia.130902.en.006P>
+-   Speed testing: 10m Sprint. Movement Assessment Technologies - World-Leading Courses and Products. (n.d.). <https://www.matassessment.com/blog/10m-sprint-test#>:\~:text=Well%2Dtrained%20male%20athletes%20can,in%20around%202.7%2D3.1%20seconds.
